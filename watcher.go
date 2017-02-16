@@ -71,6 +71,17 @@ func (w *watcher) Next() ([]*naming.Update, error) {
 		}
 		for _, address := range subset.Addresses {
 			endpoint := net.JoinHostPort(address.IP, port)
+			conn, err := net.Dial("tcp", endpoint)
+			if err != nil {
+				grpclog.Printf("kuberesolver: tried to ADD %s to %s but FAILED to dial %s", endpoint, w.target.target, err.Error())
+				continue
+			}
+			buf := make([]byte, 1)
+			_, err = conn.Read(buf)
+			if err != nil {
+				grpclog.Printf("kuberesolver: tried to ADD %s to %s but FAILED to read %s", endpoint, w.target.target, err.Error())
+				continue
+			}
 			updatedEndpoints[endpoint] = nil
 		}
 	}
@@ -78,7 +89,7 @@ func (w *watcher) Next() ([]*naming.Update, error) {
 	// Create updates to add new endpoints.
 	for addr, md := range updatedEndpoints {
 		if _, ok := w.endpoints[addr]; !ok {
-			updates = append(updates, &naming.Update{naming.Add, addr, md})
+			updates = append(updates, &naming.Update{Op: naming.Add, Addr: addr, Metadata: md})
 			grpclog.Printf("kuberesolver: %s ADDED to %s", addr, w.target.target)
 		}
 	}
@@ -86,7 +97,7 @@ func (w *watcher) Next() ([]*naming.Update, error) {
 	// Create updates to delete old endpoints.
 	for addr := range w.endpoints {
 		if _, ok := updatedEndpoints[addr]; !ok {
-			updates = append(updates, &naming.Update{naming.Delete, addr, nil})
+			updates = append(updates, &naming.Update{Op: naming.Delete, Addr: addr, Metadata: nil})
 			grpclog.Printf("kuberesolver: %s DELETED from %s", addr, w.target.target)
 		}
 	}
